@@ -502,6 +502,19 @@ static void preempt_test(void)
     printf("done with real-time preempt test, above time stamps should be 1 second apart\n");
 }
 
+static int join_join_tester(void *arg)
+{
+    int ret;
+    status_t err;
+    thread_t *peer = (thread_t *)arg;
+
+    printf("\t\tjoin join tester starting and waiting on %p\n", peer);
+    err = thread_join(peer, &ret, INFINITE_TIME);
+    printf("\t\tjoin join tester exiting with result %ld (%ld)\n", ret, err);
+    return ret;
+}
+
+
 static int join_tester(void *arg)
 {
     long val = (long)arg;
@@ -554,6 +567,19 @@ static int join_tester_server(void *arg)
     printf("\tthread magic is 0x%x (should be 0x%x)\n", t->magic, THREAD_MAGIC);
     thread_detach(t);
     printf("\tthread magic is 0x%x\n", t->magic);
+
+
+    printf("\tcreating two threads, detaching the second, and both waiting on the first\n");
+    t = thread_create("join tester", &join_tester, (void *)5, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+    thread_t *t2 = thread_create("join join tester", &join_join_tester, (void *)t, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+    thread_resume(t);
+    thread_resume(t2);
+    err = thread_join(t, &ret, INFINITE_TIME);
+    printf("\tthread t's ret is %ld\n", ret);
+    printf("\tthread magic is 0x%x\n", t->magic);
+    err = thread_join(t2, &ret, INFINITE_TIME);
+    printf("\tthread t2's ret is %ld\n", ret);
+    printf("\tthread magic is 0x%x\n", t2->magic);
 
     printf("\texiting join tester server\n");
 
@@ -618,6 +644,8 @@ static void spinlock_test(void)
 
 int thread_tests(void)
 {
+    join_test();
+
     mutex_test();
     semaphore_test();
     event_test();
@@ -630,7 +658,6 @@ int thread_tests(void)
 
     preempt_test();
 
-    join_test();
 
     return 0;
 }

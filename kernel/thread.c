@@ -21,6 +21,8 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#define LK_DEBUGLEVEL 2
+
 /**
  * @file
  * @brief  Kernel threading
@@ -332,6 +334,9 @@ status_t thread_join(thread_t *t, int *retcode, lk_time_t timeout)
 
     /* wait for the thread to die */
     if (t->state != THREAD_DEATH) {
+        /* on error, all waiters wake
+         * on ok, only one at a time
+         */
         status_t err = wait_queue_block(&t->retcode_wait_queue, timeout);
         if (err < 0) {
             THREAD_UNLOCK(state);
@@ -347,6 +352,16 @@ status_t thread_join(thread_t *t, int *retcode, lk_time_t timeout)
     /* save the return code */
     if (retcode)
         *retcode = t->retcode;
+
+    /* Wake the next in line.
+     * TODO(wad): use a separate counter to enable parallelism.
+     */
+    if (t->retcode_wait_queue.count > 0) {
+        wait_queue_wake_one(&t->retcode_wait_queue, false, 0);
+        THREAD_UNLOCK(state);
+        return NO_ERROR;
+    }
+    /* last one out turns off the lights. */
 
     /* remove it from the master thread list */
     list_delete(&t->thread_list_node);
@@ -431,7 +446,7 @@ void thread_exit(int retcode)
             heap_delayed_free(current_thread);
     } else {
         /* signal if anyone is waiting */
-        wait_queue_wake_all(&current_thread->retcode_wait_queue, false, 0);
+        wait_queue_wake_one(&current_thread->retcode_wait_queue, false, 0);
     }
 
     /* reschedule */
